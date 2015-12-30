@@ -33,13 +33,8 @@ LICENSE file.
   <dependencies>
     <dependency>
       <groupId>org.mongodb</groupId>
-      <artifactId>mongo-java-driver</artifactId>
+      <artifactId>mongodb-driver</artifactId>
       <version>${mongodb.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.allanbank</groupId>
-      <artifactId>mongodb-async-driver</artifactId>
-      <version>${mongodb.async.version}</version>
     </dependency>
     <dependency>
       <groupId>com.yahoo.ycsb</groupId>
@@ -85,22 +80,4 @@ LICENSE file.
       </plugin>
     </plugins>
   </build>
-  <repositories>
-    <repository>
-      <releases>
-        <enabled>true</enabled>
-        <updatePolicy>always</updatePolicy>
-        <checksumPolicy>warn</checksumPolicy>
-      </releases>
-      <snapshots>
-        <enabled>false</enabled>
-        <updatePolicy>never</updatePolicy>
-        <checksumPolicy>fail</checksumPolicy>
-      </snapshots>
-      <id>allanbank</id>
-      <name>Allanbank Releases</name>
-      <url>http://www.allanbank.com/repo/</url>
-      <layout>default</layout>
-    </repository>
-  </repositories>
 </project>
