@@ -1,0 +1,73 @@
+# Copyright (c) 2010 Yahoo! Inc. All rights reserved.                                                                                                                             
+#                                                                                                                                                                                 
+# Licensed under the Apache License, Version 2.0 (the "License"); you                                                                                                             
+# may not use this file except in compliance with the License. You                                                                                                                
+# may obtain a copy of the License at                                                                                                                                             
+#                                                                                                                                                                                 
+# http://www.apache.org/licenses/LICENSE-2.0                                                                                                                                      
+#                                                                                                                                                                                 
+# Unless required by applicable law or agreed to in writing, software                                                                                                             
+# distributed under the License is distributed on an "AS IS" BASIS,                                                                                                               
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or                                                                                                                 
+# implied. See the License for the specific language governing                                                                                                                    
+# permissions and limitations under the License. See accompanying                                                                                                                 
+# LICENSE file.                                                                                                                                                                   
+
+# Yahoo! Cloud System Benchmark
+# Workload: read-only workload
+#                        
+#   Default data size: 1 KB records (10 fields, 100 bytes each, plus key)
+#   Request distribution: zipfian
+
+recordcount=1000
+operationcount=1000
+workload=com.yahoo.ycsb.workloads.SearchableWorkload
+
+readallfields=true
+
+readproportion=1.0
+updateproportion=0
+scanproportion=0
+insertproportion=0
+queryproportion=0
+
+requestdistribution=zipfian
+core_workload_insertion_retry_limit = 3
+
+hosts = localhost
+table = hotel_rates
+
+field.hotel_id.type = integer
+field.hotel_id.range = 1, 1000
+field.hotel_id.queryparams = 1
+
+field.rate_cat_id.type = integer
+field.rate_cat_id.range = 100, 120
+field.rate_cat_id.queryparams = 3
+
+field.room_cat_id.type = integer
+field.room_cat_id.range = 100, 105
+# field.room_cat_id.queryparams = 2
+
+field.stay_date.type = date
+field.stay_date.range = 2016-01-31, 2016-03-31
+# field.stay_date.queryparams = 1
+
+field.book_start.type = date
+field.book_start.range = 2016-01-01, 2016-01-15
+field.book_start.queryparams = 1
+
+field.book_end.type = date
+field.book_end.range = 2016-01-15, 2016-01-30
+field.book_end.queryparams = 1
+
+field.price.type = double
+field.price.range = 50, 500
+field.price.queryparams = 2
+
+field.rate_code.type = string
+field.rate_code.range = 5, 30
+
+couchbase.query = select hotel_id, rate_cat_id, stay_date, book_start, book_end, price from `hotel-rates` where hotel_id == $hotel_id and rate_cat_id IN [$rate_cat_id1, $rate_cat_id2, $rate_cat_id3] and book_start <= $book_start and book_end >= $book_end and price between $price1 and $price2
+
+cassandra.query = select * from ycsb.hotel_rates where hotel_id = ? and rate_cat_id IN (?, ?, ?) and book_start <= ? and book_end >= ? and price >= ? and price <= ? allow filtering

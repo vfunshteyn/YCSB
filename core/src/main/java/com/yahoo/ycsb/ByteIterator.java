@@ -47,9 +47,6 @@ import java.util.Iterator;
 public abstract class ByteIterator implements Iterator<Byte> {
 
 	@Override
-	public abstract boolean hasNext();
-
-	@Override
 	public Byte next() {
 		throw new UnsupportedOperationException();
 		//return nextByte();
@@ -74,7 +71,8 @@ public abstract class ByteIterator implements Iterator<Byte> {
 	}
 
 	/** Consumes remaining contents of this object, and returns them as a string. */
-	public String toString() {
+	@Override
+  public String toString() {
 		Charset cset = Charset.forName("UTF-8");
 		CharBuffer cb = cset.decode(ByteBuffer.wrap(this.toArray()));
 		return cb.toString();

@@ -18,7 +18,6 @@
 package com.yahoo.ycsb;
 
 import java.util.Properties;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * One experiment scenario. One object of this type will
@@ -40,7 +39,7 @@ public abstract class Workload
 	
 	public static final String INSERT_START_PROPERTY_DEFAULT="0";
 	
-	private volatile AtomicBoolean stopRequested = new AtomicBoolean(false);
+	private volatile boolean stopRequested = false;
 	
       /**
        * Initialize the scenario. Create any generators and other shared objects here.
@@ -62,9 +61,8 @@ public abstract class Workload
        * 
        * @return false if the workload knows it is done for this thread. Client will terminate the thread. Return true otherwise. Return true for workloads that rely on operationcount. For workloads that read traces from a file, return true when there are more to do, false when you are done.
        */
-      public Object initThread(Properties p, int mythreadid, int threadcount) throws WorkloadException
-      {
-	 return null;
+      public Object initThread(Properties p, int mythreadid, int threadcount) throws WorkloadException {
+        return null;
       }
       
       /**
@@ -98,7 +96,7 @@ public abstract class Workload
        * Allows scheduling a request to stop the workload.
        */
       public void requestStop() {
-        stopRequested.set(true);
+        stopRequested = true;
       }
       
       /**
@@ -106,7 +104,11 @@ public abstract class Workload
        * @return true if stop was requested, false otherwise.
        */
       public boolean isStopRequested() {
-        if (stopRequested.get() == true) return true;
-        else return false;
+        return stopRequested;
       }
+      
+      public boolean doDelete(DB db) {
+        throw new UnsupportedOperationException();
+      }
+      
 }

@@ -160,7 +160,7 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB {
     // Terminate right now if table does not exist, since the client
     // will not propagate this error upstream once the workload
     // starts.
-    String table = com.yahoo.ycsb.workloads.CoreWorkload.table;
+    String table = tableName;
     try {
       final TableName tName = TableName.valueOf(table);
       connection.getTable(tName).getTableDescriptor();
@@ -228,6 +228,7 @@ public class HBaseClient10 extends com.yahoo.ycsb.DB {
    *          A HashMap of field/value pairs for the result
    * @return Zero on success, a non-zero error code on error
    */
+  @Override
   public Status read(String table, String key, Set<String> fields,
       HashMap<String, ByteIterator> result) {
     // if this is a "new" table, init HTable object. Else, use existing one

@@ -18,8 +18,10 @@
 package com.yahoo.ycsb;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.Vector;
@@ -55,6 +57,7 @@ public class DBWrapper extends DB
   /**
    * Set the properties for this DB.
    */
+  @Override
   public void setProperties(Properties p)
   {
     _db.setProperties(p);
@@ -63,6 +66,7 @@ public class DBWrapper extends DB
   /**
    * Get the set of properties for this DB.
    */
+  @Override
   public Properties getProperties()
   {
     return _db.getProperties();
@@ -72,6 +76,7 @@ public class DBWrapper extends DB
    * Initialize any state for this DB.
    * Called once per DB instance; there is one DB instance per client thread.
    */
+  @Override
   public void init() throws DBException
   {
     _db.init();
@@ -98,13 +103,14 @@ public class DBWrapper extends DB
    * Cleanup any state for this DB.
    * Called once per DB instance; there is one DB instance per client thread.
    */
+  @Override
   public void cleanup() throws DBException
   {
     long ist=_measurements.getIntendedtartTimeNs();
     long st = System.nanoTime();
     _db.cleanup();
     long en=System.nanoTime();
-    measure("CLEANUP", Status.OK, ist, st, en);
+    measure(Operation.CLEANUP, Status.OK, ist, st, en);
   }
 
   /**
@@ -117,6 +123,7 @@ public class DBWrapper extends DB
    * @param result A HashMap of field/value pairs for the result
    * @return The result of the operation.
    */
+  @Override
   public Status read(String table, String key, Set<String> fields,
       HashMap<String,ByteIterator> result)
   {
@@ -124,8 +131,9 @@ public class DBWrapper extends DB
     long st = System.nanoTime();
     Status res=_db.read(table,key,fields,result);
     long en=System.nanoTime();
-    measure("READ", res, ist, st, en);
-    _measurements.reportStatus("READ", res);
+    Operation op = Operation.READ;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
     return res;
   }
 
@@ -140,6 +148,7 @@ public class DBWrapper extends DB
    * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
    * @return The result of the operation.
    */
+  @Override
   public Status scan(String table, String startkey, int recordcount,
       Set<String> fields, Vector<HashMap<String,ByteIterator>> result)
   {
@@ -147,14 +156,15 @@ public class DBWrapper extends DB
     long st = System.nanoTime();
     Status res=_db.scan(table,startkey,recordcount,fields,result);
     long en=System.nanoTime();
-    measure("SCAN", res, ist, st, en);
-    _measurements.reportStatus("SCAN", res);
+    Operation op = Operation.SCAN;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
     return res;
   }
 
-  private void measure(String op, Status result, long intendedStartTimeNanos,
+  private void measure(Operation op, Status result, long intendedStartTimeNanos,
       long startTimeNanos, long endTimeNanos) {
-    String measurementName = op;
+    String measurementName = op.toString();
     if (result != Status.OK) {
       if (this.reportLatencyForEachError ||
           this.latencyTrackedErrors.contains(result.getName())) {
@@ -178,6 +188,7 @@ public class DBWrapper extends DB
    * @param values A HashMap of field/value pairs to update in the record
    * @return The result of the operation.
    */
+  @Override
   public Status update(String table, String key,
       HashMap<String,ByteIterator> values)
   {
@@ -185,8 +196,9 @@ public class DBWrapper extends DB
     long st = System.nanoTime();
     Status res=_db.update(table,key,values);
     long en=System.nanoTime();
-    measure("UPDATE", res, ist, st, en);
-    _measurements.reportStatus("UPDATE", res);
+    Operation op = Operation.UPDATE;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
     return res;
   }
 
@@ -200,6 +212,7 @@ public class DBWrapper extends DB
    * @param values A HashMap of field/value pairs to insert in the record
    * @return The result of the operation.
    */
+  @Override
   public Status insert(String table, String key,
       HashMap<String,ByteIterator> values)
   {
@@ -207,8 +220,9 @@ public class DBWrapper extends DB
     long st = System.nanoTime();
     Status res=_db.insert(table,key,values);
     long en=System.nanoTime();
-    measure("INSERT", res, ist, st, en);
-    _measurements.reportStatus("INSERT", res);
+    Operation op = Operation.INSERT;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
     return res;
   }
 
@@ -219,14 +233,66 @@ public class DBWrapper extends DB
    * @param key The record key of the record to delete.
    * @return The result of the operation.
    */
+  @Override
   public Status delete(String table, String key)
   {
     long ist=_measurements.getIntendedtartTimeNs();
     long st = System.nanoTime();
     Status res=_db.delete(table,key);
     long en=System.nanoTime();
-    measure("DELETE", res, ist, st, en);
-    _measurements.reportStatus("DELETE", res);
+    Operation op = Operation.DELETE;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
     return res;
   }
+
+  @Override
+  public Status query(String table, Set<String> fields, Collection<Map<String, Object>> result, QueryConstraint... criteria) {
+    long ist=_measurements.getIntendedtartTimeNs();
+    long st = System.nanoTime();
+    Status res=_db.query(table, fields, result, criteria);
+    long en=System.nanoTime();
+    Operation op = Operation.QUERY;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
+    return res;
+  }
+
+  @Override
+  public Status read(String table, Object key, Set<String> fields, Map<String, Object> result) {
+    long ist=_measurements.getIntendedtartTimeNs();
+    long st = System.nanoTime();
+    Status res=_db.read(table,key,fields,result);
+    long en=System.nanoTime();
+    Operation op = Operation.READ;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
+    return res;
+  }
+
+  @Override
+  public Status update(String table, Object key, Map<String, Object> values) {
+    long ist=_measurements.getIntendedtartTimeNs();
+    long st = System.nanoTime();
+    Status res=_db.update(table, key, values);
+    long en=System.nanoTime();
+    Operation op = Operation.UPDATE;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
+    return res;
+  }
+
+  @Override
+  public Status insert(String table, Object key, Map<String, Object> values) {
+    long ist=_measurements.getIntendedtartTimeNs();
+    long st = System.nanoTime();
+    Status res=_db.insert(table,key,values);
+    long en=System.nanoTime();
+    Operation op = Operation.INSERT;
+    measure(op, res, ist, st, en);
+    _measurements.reportStatus(op.toString(), res);
+    return res;
+  }
+  
+  
 }

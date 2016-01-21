@@ -24,29 +24,23 @@ import java.util.Properties;
  */
 public class DBFactory
 {
-      @SuppressWarnings("unchecked")
 	public static DB newDB(String dbname, Properties properties) throws UnknownDBException
-      {
-	 ClassLoader classLoader = DBFactory.class.getClassLoader();
-
-	 DB ret=null;
+    {
 
 	 try 
 	 {
-	    Class dbclass = classLoader.loadClass(dbname);
-	    //System.out.println("dbclass.getName() = " + dbclass.getName());
+	    Class<?> dbclass = Class.forName(dbname);
 	    
-	    ret=(DB)dbclass.newInstance();
+	    DB ret=(DB)dbclass.newInstance();
+	    ret.setProperties(properties);
+
+	    return new DBWrapper(ret);
 	 }
 	 catch (Exception e) 
 	 {  
-	    e.printStackTrace();
-	    return null;
+	   throw new UnknownDBException(e);
 	 }
 	 
-	 ret.setProperties(properties);
-
-	 return new DBWrapper(ret);
-      }
+    }
       
 }

@@ -80,7 +80,7 @@ public class CoreWorkload extends Workload {
    */
   public static final String TABLENAME_PROPERTY_DEFAULT = "usertable";
 
-  public static String table;
+  public String table;
 
 
   /**
@@ -95,7 +95,7 @@ public class CoreWorkload extends Workload {
 
   int fieldcount;
 
-  private List<String> fieldnames;
+  protected List<String> fieldnames;
 
   /**
    * The name of the property for the field length distribution. Options are "uniform", "zipfian"
@@ -181,7 +181,7 @@ public class CoreWorkload extends Workload {
    * Set to true if want to check correctness of reads. Must also
    * be set to true during loading phase to function.
    */
-  private boolean dataintegrity;
+  protected boolean dataintegrity;
 
   /**
    * The name of the property for the proportion of transactions that are reads.
@@ -229,9 +229,19 @@ public class CoreWorkload extends Workload {
   public static final String READMODIFYWRITE_PROPORTION_PROPERTY = "readmodifywriteproportion";
 
   /**
-   * The default proportion of transactions that are scans.
+   * The default proportion of transactions that are read-modify-write.
    */
   public static final String READMODIFYWRITE_PROPORTION_PROPERTY_DEFAULT = "0.0";
+  
+  /**
+   * The name of the property for the proportion of transactions that are queries.
+   */
+  public static final String QUERY_PROPORTION_PROPERTY = "queryproportion";
+  
+  /**
+   * The default proportion of transactions that are queries.
+   */
+  public static final String QUERY_PROPORTION_PROPERTY_DEFAULT = "0.0";
 
   /**
    * The name of the property for the the distribution of requests across the keyspace. Options are
@@ -318,7 +328,6 @@ public class CoreWorkload extends Workload {
   AcknowledgedCounterGenerator transactioninsertkeysequence;
 
   NumberGenerator scanlength;
-
   boolean orderedinserts;
 
   int recordcount;
@@ -327,33 +336,36 @@ public class CoreWorkload extends Workload {
   int insertionRetryInterval;
 
   private Measurements _measurements = Measurements.getMeasurements();
-
-  protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
-    NumberGenerator fieldlengthgenerator;
-    String fieldlengthdistribution = p.getProperty(
-        FIELD_LENGTH_DISTRIBUTION_PROPERTY, FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT);
-    int fieldlength =
-        Integer.parseInt(p.getProperty(FIELD_LENGTH_PROPERTY, FIELD_LENGTH_PROPERTY_DEFAULT));
+  
+  protected static NumberGenerator getNumericGenerator(String distType, Number min, Number max, Properties p) throws WorkloadException {
     String fieldlengthhistogram = p.getProperty(
         FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY, FIELD_LENGTH_HISTOGRAM_FILE_PROPERTY_DEFAULT);
-    if (fieldlengthdistribution.compareTo("constant") == 0) {
-      fieldlengthgenerator = new ConstantIntegerGenerator(fieldlength);
-    } else if (fieldlengthdistribution.compareTo("uniform") == 0) {
-      fieldlengthgenerator = new UniformIntegerGenerator(1, fieldlength);
-    } else if (fieldlengthdistribution.compareTo("zipfian") == 0) {
-      fieldlengthgenerator = new ZipfianGenerator(1, fieldlength);
-    } else if (fieldlengthdistribution.compareTo("histogram") == 0) {
-      try {
-        fieldlengthgenerator = new HistogramGenerator(fieldlengthhistogram);
-      } catch (IOException e) {
+    switch (distType) {
+      case "constant":
+        return new ConstantIntegerGenerator(max.intValue());
+      case "uniform": 
+        return new UniformIntegerGenerator(min.intValue(), max.intValue());
+      case "zipfian": 
+        return new ZipfianGenerator(min.longValue(), max.longValue());
+      case "histogram":
+        try {
+          return new HistogramGenerator(fieldlengthhistogram);
+        } catch (IOException e) {
+          throw new WorkloadException(
+              "Couldn't read field length histogram file: " + fieldlengthhistogram, e);
+        }
+      default:
         throw new WorkloadException(
-            "Couldn't read field length histogram file: " + fieldlengthhistogram, e);
-      }
-    } else {
-      throw new WorkloadException(
-          "Unknown field length distribution \"" + fieldlengthdistribution + "\"");
+            "Unsupported distribution \"" + distType + "\"");
     }
-    return fieldlengthgenerator;
+  }
+
+  protected static NumberGenerator getFieldLengthGenerator(Properties p) throws WorkloadException {
+    String fieldlengthdistribution = p.getProperty(
+        FIELD_LENGTH_DISTRIBUTION_PROPERTY, FIELD_LENGTH_DISTRIBUTION_PROPERTY_DEFAULT);
+    int maxLength =
+        Integer.parseInt(p.getProperty(FIELD_LENGTH_PROPERTY, FIELD_LENGTH_PROPERTY_DEFAULT));
+    return getNumericGenerator(fieldlengthdistribution, 1, maxLength, p);
   }
 
   /**
@@ -382,6 +394,9 @@ public class CoreWorkload extends Workload {
         p.getProperty(SCAN_PROPORTION_PROPERTY, SCAN_PROPORTION_PROPERTY_DEFAULT));
     double readmodifywriteproportion = Double.parseDouble(p.getProperty(
         READMODIFYWRITE_PROPORTION_PROPERTY, READMODIFYWRITE_PROPORTION_PROPERTY_DEFAULT));
+    double queryproportion = Double.parseDouble(p.getProperty(
+        QUERY_PROPORTION_PROPERTY, QUERY_PROPORTION_PROPERTY_DEFAULT));
+    
     recordcount =
         Integer.parseInt(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0)
@@ -448,6 +463,10 @@ public class CoreWorkload extends Workload {
 
     if (readmodifywriteproportion > 0) {
       operationchooser.addValue(readmodifywriteproportion, "READMODIFYWRITE");
+    }
+    
+    if (queryproportion > 0) {
+      operationchooser.addValue(queryproportion, "QUERY");
     }
 
     transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
@@ -603,7 +622,7 @@ public class CoreWorkload extends Workload {
 
     return (status == Status.OK);
   }
-
+  
   /**
    * Do one transaction operation. Because it will be called concurrently from multiple client
    * threads, this function must be thread safe. However, avoid synchronized, or the threads will block waiting
@@ -625,6 +644,9 @@ public class CoreWorkload extends Workload {
         break;
       case "SCAN":
         doTransactionScan(db);
+        break;
+      case "QUERY":
+        doTransactionQuery(db);
         break;
       default:
         doTransactionReadModifyWrite(db);
@@ -698,6 +720,9 @@ public class CoreWorkload extends Workload {
     if (dataintegrity) {
       verifyRow(keyname, cells);
     }
+  }
+  
+  public void doTransactionQuery(DB db) {
   }
   
   public void doTransactionReadModifyWrite(DB db) {

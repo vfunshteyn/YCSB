@@ -25,15 +25,15 @@ import java.util.Random;
 public class Utils
 {
   private static final Random rand = new Random();
-  private static final ThreadLocal<Random> rng = new ThreadLocal<Random>();
+  private static final ThreadLocal<Random> rng = new ThreadLocal<Random>() {
+    @Override
+    public Random initialValue() {
+      return new Random(rand.nextLong());
+    }
+  };
 
   public static Random random() {
-    Random ret = rng.get();
-    if(ret == null) {
-      ret = new Random(rand.nextLong());
-      rng.set(ret);
-    }
-    return ret;
+    return rng.get();
   }
       /**
        * Generate a random ASCII string of a given length.

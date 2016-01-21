@@ -22,6 +22,7 @@ import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.Status;
 import com.yahoo.ycsb.measurements.Measurements;
+import com.yahoo.ycsb.workloads.CoreWorkload;
 
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.conf.Configuration;
@@ -82,6 +83,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * Initialize any state for this DB.
      * Called once per DB instance; there is one DB instance per client thread.
      */
+    @Override
     public void init() throws DBException
     {
         if ( (getProperties().getProperty("debug")!=null) &&
@@ -135,7 +137,8 @@ public class HBaseClient extends com.yahoo.ycsb.DB
       // Terminate right now if table does not exist, since the client
       // will not propagate this error upstream once the workload
       // starts.
-      String table = com.yahoo.ycsb.workloads.CoreWorkload.table;
+      String table = getProperties().getProperty(CoreWorkload.TABLENAME_PROPERTY,
+                  CoreWorkload.TABLENAME_PROPERTY_DEFAULT);
       try
 	  {
 	      HTableInterface ht = _hConn.getTable(table);
@@ -151,6 +154,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * Cleanup any state for this DB.
      * Called once per DB instance; there is one DB instance per client thread.
      */
+    @Override
     public void cleanup() throws DBException
     {
         // Get the measurements instance as this is the only client that should
@@ -195,6 +199,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param result A HashMap of field/value pairs for the result
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public Status read(String table, String key, Set<String> fields, HashMap<String,ByteIterator> result)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
@@ -263,6 +268,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public Status scan(String table, String startkey, int recordcount, Set<String> fields, Vector<HashMap<String,ByteIterator>> result)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
@@ -360,6 +366,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param values A HashMap of field/value pairs to update in the record
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public Status update(String table, String key, HashMap<String,ByteIterator> values)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
@@ -421,6 +428,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param values A HashMap of field/value pairs to insert in the record
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public Status insert(String table, String key, HashMap<String,ByteIterator> values)
     {
         return update(table,key,values);
@@ -433,6 +441,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
      * @param key The record key of the record to delete.
      * @return Zero on success, a non-zero error code on error
      */
+    @Override
     public Status delete(String table, String key)
     {
         //if this is a "new" table, init HTable object.  Else, use existing one
@@ -493,6 +502,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
         {
             Thread t=new Thread()
             {
+                @Override
                 public void run()
                 {
                     try

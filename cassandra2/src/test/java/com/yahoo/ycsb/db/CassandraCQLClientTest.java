@@ -24,7 +24,6 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
 import com.google.common.collect.Sets;
-
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
@@ -61,6 +60,7 @@ public class CassandraCQLClientTest {
 
   private CassandraCQLClient client;
   private Session session;
+  private CoreWorkload workload;
 
   @ClassRule
   public static CassandraCQLUnit cassandraUnit =
@@ -74,7 +74,7 @@ public class CassandraCQLClientTest {
     p.setProperty("table", TABLE);
 
     Measurements.setProperties(p);
-    final CoreWorkload workload = new CoreWorkload();
+    workload = new CoreWorkload();
     workload.init(p);
     client = new CassandraCQLClient();
     client.setProperties(p);
@@ -122,7 +122,7 @@ public class CassandraCQLClientTest {
     insertRow();
 
     final HashMap<String, ByteIterator> result = new HashMap<String, ByteIterator>();
-    final Status status = client.read(CoreWorkload.table, DEFAULT_ROW_KEY, null, result);
+    final Status status = client.read(workload.table, DEFAULT_ROW_KEY, null, result);
     assertThat(status, is(Status.OK));
     assertThat(result.entrySet(), hasSize(11));
     assertThat(result, hasEntry("field2", null));
@@ -143,7 +143,7 @@ public class CassandraCQLClientTest {
     insertRow();
     final HashMap<String, ByteIterator> result = new HashMap<String, ByteIterator>();
     final Set<String> fields = Sets.newHashSet("field1");
-    final Status status = client.read(CoreWorkload.table, DEFAULT_ROW_KEY, fields, result);
+    final Status status = client.read(workload.table, DEFAULT_ROW_KEY, fields, result);
     assertThat(status, is(Status.OK));
     assertThat(result.entrySet(), hasSize(1));
     final Map<String, String> strResult = StringByteIterator.getStringMap(result);

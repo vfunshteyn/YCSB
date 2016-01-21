@@ -26,10 +26,11 @@ import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
@@ -236,6 +237,7 @@ class ClientThread extends Thread
   private static boolean _spinSleep;
   DB _db;
   boolean _dotransactions;
+  final boolean clean;
   Workload _workload;
   int _opcount;
   double _targetOpsPerMs;
@@ -247,6 +249,7 @@ class ClientThread extends Thread
   Properties _props;
   long _targetOpsTickNs;
   final Measurements _measurements;
+  private final CyclicBarrier gate;
 
   /**
    * Constructor.
@@ -259,10 +262,12 @@ class ClientThread extends Thread
    * @param targetperthreadperms target number of operations per thread per ms
    * @param completeLatch The latch tracking the completion of all clients.
    */
-  public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, int opcount, double targetperthreadperms, CountDownLatch completeLatch)
+  public ClientThread(DB db, boolean dotransactions, boolean clean, Workload workload, Properties props, int opcount, double targetperthreadperms, 
+      CountDownLatch completeLatch, CyclicBarrier startBarrier)
   {
     _db=db;
     _dotransactions=dotransactions;
+    this.clean = clean;
     _workload=workload;
     _opcount=opcount;
     _opsdone=0;
@@ -274,6 +279,7 @@ class ClientThread extends Thread
     _measurements = Measurements.getMeasurements();
     _spinSleep = Boolean.valueOf(_props.getProperty("spin.sleep", "false"));
     _completeLatch=completeLatch;
+    gate = startBarrier;
   }
 
   public int getOpsDone()
@@ -306,6 +312,11 @@ class ClientThread extends Thread
       return;
     }
 
+    try {
+      gate.await();
+    } catch (InterruptedException | BrokenBarrierException e1) {
+      throw new RuntimeException(e1);
+    }
     //NOTE: Switching to using nanoTime and parkNanos for time management here such that the measurements
     // and the client thread have the same view on time.
 
@@ -317,48 +328,45 @@ class ClientThread extends Thread
       long randomMinorDelay = Utils.random().nextInt((int) _targetOpsTickNs);
       sleepUntil(System.nanoTime() + randomMinorDelay);
     }
-    try
+    if (_dotransactions)
     {
-      if (_dotransactions)
+      long startTimeNanos = System.nanoTime();
+
+      while (((_opcount == 0) || (_opsdone < _opcount)) && !_workload.isStopRequested())
       {
-        long startTimeNanos = System.nanoTime();
 
-        while (((_opcount == 0) || (_opsdone < _opcount)) && !_workload.isStopRequested())
+        if (!_workload.doTransaction(_db,_workloadstate))
         {
-
-          if (!_workload.doTransaction(_db,_workloadstate))
-          {
-            break;
-          }
-
-          _opsdone++;
-
-          throttleNanos(startTimeNanos);
+          break;
         }
-      }
-      else
-      {
-        long startTimeNanos = System.nanoTime();
 
-        while (((_opcount == 0) || (_opsdone < _opcount)) && !_workload.isStopRequested())
-        {
+        _opsdone++;
 
-          if (!_workload.doInsert(_db,_workloadstate))
-          {
-            break;
-          }
-
-          _opsdone++;
-
-          throttleNanos(startTimeNanos);
-        }
+        throttleNanos(startTimeNanos);
       }
     }
-    catch (Exception e)
+    else
     {
-      e.printStackTrace();
-      e.printStackTrace(System.out);
-      System.exit(0);
+      long startTimeNanos = System.nanoTime();
+
+      while (((_opcount == 0) || (_opsdone < _opcount)) && !_workload.isStopRequested())
+      {
+
+        if (clean) {
+          
+          if (!_workload.doDelete(_db)) {
+            break;
+          }
+        }
+        else if (!_workload.doInsert(_db,_workloadstate))
+        {
+          break;
+        }
+
+        _opsdone++;
+
+        throttleNanos(startTimeNanos);
+      }
     }
 
     try
@@ -565,12 +573,12 @@ public class Client
   }
 
   @SuppressWarnings("unchecked")
-  public static void main(String[] args)
+  public static void main(String[] args) throws Exception
   {
     String dbname;
     Properties props=new Properties();
     Properties fileprops=new Properties();
-    boolean dotransactions=true;
+    boolean dotransactions=true, clean = false;
     int threadcount=1;
     int target=0;
     boolean status=false;
@@ -614,6 +622,11 @@ public class Client
       else if (args[argindex].compareTo("-load")==0)
       {
         dotransactions=false;
+        argindex++;
+      }
+      else if (args[argindex].compareTo("-clean")==0) {
+        dotransactions = false;
+        clean = true;
         argindex++;
       }
       else if (args[argindex].compareTo("-t")==0)
@@ -660,23 +673,8 @@ public class Client
         argindex++;
 
         Properties myfileprops=new Properties();
-        try
-        {
-          myfileprops.load(new FileInputStream(propfile));
-        }
-        catch (IOException e)
-        {
-          System.out.println(e.getMessage());
-          System.exit(0);
-        }
-
-        //Issue #5 - remove call to stringPropertyNames to make compilable under Java 1.5
-        for (Enumeration e=myfileprops.propertyNames(); e.hasMoreElements(); )
-        {
-          String prop=(String)e.nextElement();
-
-          fileprops.setProperty(prop,myfileprops.getProperty(prop));
-        }
+        myfileprops.load(new FileInputStream(propfile));
+        fileprops.putAll(myfileprops);
 
       }
       else if (args[argindex].compareTo("-p")==0)
@@ -725,14 +723,9 @@ public class Client
     //overwrite file properties with properties from the command line
 
     //Issue #5 - remove call to stringPropertyNames to make compilable under Java 1.5
-    for (Enumeration e=props.propertyNames(); e.hasMoreElements(); )
-    {
-      String prop=(String)e.nextElement();
+    fileprops.putAll(props);
 
-      fileprops.setProperty(prop,props.getProperty(prop));
-    }
-
-    props=fileprops;
+    props = fileprops;
 
     if (!checkRequiredProperties(props))
     {
@@ -758,9 +751,8 @@ public class Client
 
     System.out.println("YCSB Client 0.1");
     System.out.print("Command line:");
-    for (int i=0; i<args.length; i++)
-    {
-      System.out.print(" "+args[i]);
+    for (String arg : args) {
+      System.out.print(" "+arg);
     }
     System.out.println();
     System.err.println("Loading workload...");
@@ -791,34 +783,11 @@ public class Client
     Measurements.setProperties(props);
 
     //load the workload
-    ClassLoader classLoader = Client.class.getClassLoader();
 
-    Workload workload=null;
+    Class<?> workloadclass = Class.forName(props.getProperty(WORKLOAD_PROPERTY));
 
-    try
-    {
-      Class workloadclass = classLoader.loadClass(props.getProperty(WORKLOAD_PROPERTY));
-
-      workload=(Workload)workloadclass.newInstance();
-    }
-    catch (Exception e)
-    {
-      e.printStackTrace();
-      e.printStackTrace(System.out);
-      System.exit(0);
-    }
-
-    try
-    {
-      workload.init(props);
-    }
-    catch (WorkloadException e)
-    {
-      e.printStackTrace();
-      e.printStackTrace(System.out);
-      System.exit(0);
-    }
-
+    Workload workload = (Workload)workloadclass.newInstance();
+    workload.init(props);
     warningthread.interrupt();
 
     //run the workload
@@ -843,20 +812,11 @@ public class Client
     }
 
     CountDownLatch completeLatch=new CountDownLatch(threadcount);
+    CyclicBarrier startGate = new CyclicBarrier(threadcount);
     final List<ClientThread> clients=new ArrayList<ClientThread>(threadcount);
     for (int threadid=0; threadid<threadcount; threadid++)
     {
-      DB db=null;
-      try
-      {
-        db=DBFactory.newDB(dbname,props);
-      }
-      catch (UnknownDBException e)
-      {
-        System.out.println("Unknown DB "+dbname);
-        System.exit(0);
-      }
-
+      DB db = DBFactory.newDB(dbname,props);
 
       int threadopcount = opcount/threadcount;
 
@@ -866,7 +826,8 @@ public class Client
         ++threadopcount;
       }
 
-      ClientThread t=new ClientThread(db,dotransactions,workload,props,threadopcount, targetperthreadperms, completeLatch);
+      ClientThread t=new ClientThread(db,dotransactions,clean, workload,props,threadopcount, targetperthreadperms, 
+          completeLatch, startGate);
 
       clients.add(t);
     }
@@ -901,12 +862,12 @@ public class Client
 
     int opsDone = 0;
 
-    for (Thread t : clients)
+    for (ClientThread t : clients)
     {
       try
       {
         t.join();
-        opsDone += ((ClientThread)t).getOpsDone();
+        opsDone += t.getOpsDone();
       }
       catch (InterruptedException e)
       {
@@ -930,27 +891,7 @@ public class Client
       }
     }
 
-    try
-    {
-      workload.cleanup();
-    }
-    catch (WorkloadException e)
-    {
-      e.printStackTrace();
-      e.printStackTrace(System.out);
-      System.exit(0);
-    }
-
-    try
-    {
-      exportMeasurements(props, opsDone, en - st);
-    } catch (IOException e)
-    {
-      System.err.println("Could not export measurements, error: " + e.getMessage());
-      e.printStackTrace();
-      System.exit(-1);
-    }
-
-    System.exit(0);
+    workload.cleanup();
+    exportMeasurements(props, opsDone, en - st);
   }
 }

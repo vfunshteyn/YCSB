@@ -17,12 +17,14 @@
  */
 package com.yahoo.ycsb.db;
 
+import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.ColumnDefinitions;
 import com.datastax.driver.core.ConsistencyLevel;
 import com.datastax.driver.core.Host;
 import com.datastax.driver.core.HostDistance;
 import com.datastax.driver.core.Metadata;
+import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
@@ -31,18 +33,28 @@ import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.datastax.driver.core.querybuilder.Select;
+import com.datastax.driver.core.querybuilder.Update;
+import com.google.common.base.Function;
+import com.google.common.collect.Maps;
 import com.yahoo.ycsb.ByteArrayByteIterator;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.Status;
+import com.yahoo.ycsb.workloads.SearchableWorkload;
 
 import java.nio.ByteBuffer;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Cassandra 2.x CQL client.
@@ -58,12 +70,15 @@ public class CassandraCQLClient extends DB {
 
   private static ConsistencyLevel readConsistencyLevel = ConsistencyLevel.ONE;
   private static ConsistencyLevel writeConsistencyLevel = ConsistencyLevel.ONE;
+  
+  private static String queryString;
 
   public static final String YCSB_KEY = "y_id";
   public static final String KEYSPACE_PROPERTY = "cassandra.keyspace";
   public static final String KEYSPACE_PROPERTY_DEFAULT = "ycsb";
   public static final String USERNAME_PROPERTY = "cassandra.username";
   public static final String PASSWORD_PROPERTY = "cassandra.password";
+  public static final String QUERY_PROPERTY = "cassandra.query";
 
   public static final String HOSTS_PROPERTY = "hosts";
   public static final String PORT_PROPERTY = "port";
@@ -93,6 +108,21 @@ public class CassandraCQLClient extends DB {
 
   private static boolean debug = false;
 
+  private final Function<ByteIterator, Object> xFormer = new Function<ByteIterator, Object>() {
+    @Override
+    public Object apply(ByteIterator input) {
+      return input.toString();
+    }
+  };
+  
+  private static PreparedStatement queryStmt;
+  
+  private static final Logger log = LoggerFactory.getLogger(CassandraCQLClient.class);
+  
+  private static final Map<String, int[]> queryCols = new HashMap<>();
+  
+  private static final Set<String> pkFields = new HashSet<>(); // additional PK columns
+
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
    * DB instance per client thread.
@@ -111,7 +141,7 @@ public class CassandraCQLClient extends DB {
       if (cluster != null) {
         return;
       }
-
+      
       try {
 
         debug =
@@ -138,6 +168,8 @@ public class CassandraCQLClient extends DB {
         writeConsistencyLevel = ConsistencyLevel.valueOf(
             getProperties().getProperty(WRITE_CONSISTENCY_LEVEL_PROPERTY,
                 WRITE_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
+        
+        queryString = getProperties().getProperty(QUERY_PROPERTY);
 
         if ((username != null) && !username.isEmpty()) {
           cluster = Cluster.builder().withCredentials(username, password)
@@ -188,10 +220,36 @@ public class CassandraCQLClient extends DB {
         }
 
         session = cluster.connect(keyspace);
+        
+        if (queryString != null) {
+          queryStmt = session.prepare(queryString);
+
+          for (int i = 0; i < queryStmt.getVariables().size(); i++) {
+              // Be optimistic, 99% of the time, previous will be null.
+              String colName = queryStmt.getVariables().getName(i).toLowerCase();
+              int[] previous = queryCols.put(colName, new int[]{ i });
+              if (previous != null) {
+                  int[] indexes = new int[previous.length + 1];
+                  System.arraycopy(previous, 0, indexes, 0, previous.length);
+                  indexes[indexes.length - 1] = i;
+                  queryCols.put(colName, indexes);
+              }
+          }
+          
+        }
 
       } catch (Exception e) {
         throw new DBException(e);
       }
+      
+      String pkCols = getProperties().getProperty(SearchableWorkload.ADDITIONAL_PK_FIELDS_PROP, "").trim();
+      if (!pkCols.isEmpty()) {
+        String[] parts = pkCols.split("\\s*,\\s*");
+        for (String s: parts) {
+          pkFields.add(s);
+        }
+      }
+      
     } // synchronized
   }
 
@@ -391,8 +449,7 @@ public class CassandraCQLClient extends DB {
   @Override
   public Status update(String table, String key,
       HashMap<String, ByteIterator> values) {
-    // Insert and updates provide the same functionality
-    return insert(table, key, values);
+    return update(table, key, Maps.transformValues(values, xFormer));
   }
 
   /**
@@ -411,36 +468,8 @@ public class CassandraCQLClient extends DB {
   @Override
   public Status insert(String table, String key,
       HashMap<String, ByteIterator> values) {
-
-    try {
-      Insert insertStmt = QueryBuilder.insertInto(table);
-
-      // Add key
-      insertStmt.value(YCSB_KEY, key);
-
-      // Add fields
-      for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
-        Object value;
-        ByteIterator byteIterator = entry.getValue();
-        value = byteIterator.toString();
-
-        insertStmt.value(entry.getKey(), value);
-      }
-
-      insertStmt.setConsistencyLevel(writeConsistencyLevel);
-
-      if (debug) {
-        System.out.println(insertStmt.toString());
-      }
-
-      session.execute(insertStmt);
-
-      return Status.OK;
-    } catch (Exception e) {
-      e.printStackTrace();
-    }
-
-    return Status.ERROR;
+    
+    return insert(table, key, Maps.transformValues(values, xFormer));
   }
 
   /**
@@ -475,6 +504,191 @@ public class CassandraCQLClient extends DB {
     }
 
     return Status.ERROR;
+  }
+
+  @Override
+  public Status query(String table, Set<String> fields, Collection<Map<String, Object>> result, 
+      QueryConstraint... criteria) {
+    if (queryString == null) {
+      log.info("Query string not configured");
+      return Status.UNEXPECTED_STATE;
+    }
+    
+    try {
+      BoundStatement bs = new BoundStatement(queryStmt);
+      Map<String, Integer> colCt = new HashMap<>();
+      
+      for (QueryConstraint c : criteria) {
+        Object o = c.fieldValue;
+        
+        String colName = c.fieldName.split("\\d")[0];
+        Integer idx = colCt.get(colName);
+        if (idx == null) {
+          idx = 0;
+        }
+        
+        switch (o.getClass().getSimpleName()) {
+          case "Integer" : 
+            bs.setInt(queryCols.get(colName)[idx], (Integer)o);
+            break;
+          case "Long" : 
+            bs.setLong(queryCols.get(colName)[idx], (Long)o);
+            break;
+          case "String" : 
+            bs.setString(queryCols.get(colName)[idx], (String)o);
+            break;
+          case "Double" :
+            bs.setFloat(queryCols.get(colName)[idx], ((Double)o).floatValue());
+            break;
+          default:
+            throw new IllegalArgumentException(o.toString());
+        }
+        colCt.put(colName, ++idx);
+      }
+      
+      ResultSet rs = session.execute(bs);
+      List<Row> results = rs.all();
+      if (debug) {
+        System.out.println(results.size() + " rows fetched.");
+      }
+      for (Row r: results) {
+          Map<String, Object> res = new HashMap<>();
+          getNextRow(r, res, fields);
+          result.add(res);
+      }
+      
+      
+    } catch (Exception e) {
+      log.error("Exception executing query", e);
+      return Status.ERROR;
+    } 
+    
+    return Status.OK;
+  }
+
+  @Override
+  public Status read(String table, Object key, Set<String> fields, Map<String, Object> result) {
+    try {
+      Statement stmt;
+      Select.Builder selectBuilder;
+
+      if (fields == null) {
+        selectBuilder = QueryBuilder.select().all();
+      } else {
+        selectBuilder = QueryBuilder.select();
+        for (String col : fields) {
+          ((Select.Selection) selectBuilder).column(col);
+        }
+      }
+
+      stmt = selectBuilder.from(table).where(QueryBuilder.eq(YCSB_KEY, key))
+          .limit(1);
+      stmt.setConsistencyLevel(readConsistencyLevel);
+
+      if (debug) {
+        System.out.println(stmt.toString());
+      }
+
+      ResultSet rs = session.execute(stmt);
+
+      if (rs.isExhausted()) {
+        return Status.NOT_FOUND;
+      }
+
+      // Should be only 1 row
+      getNextRow(rs.one(), result, fields);
+
+      return Status.OK;
+
+    } catch (Exception e) {
+      e.printStackTrace();
+      System.out.println("Error reading key: " + key);
+      return Status.ERROR;
+    }
+  }
+
+  @Override
+  public Status update(String table, Object key, Map<String, Object> values) {
+    try {
+      Update updStmt = QueryBuilder.update(table);
+
+      // Add key
+      updStmt.where(QueryBuilder.eq(YCSB_KEY, key));
+      
+      // Hack!
+      if (!pkFields.isEmpty()) {
+        Map<String, Object> res = new HashMap<>(1);
+        read(table, key, pkFields, res);
+        for (String fName: pkFields) {
+          Object v = res.get(fName);
+          if (v != null) updStmt.where(QueryBuilder.eq(fName, v)); 
+        }
+      }
+      
+      // Add fields
+      for (Map.Entry<String, Object> entry : values.entrySet()) {
+        if (!pkFields.contains(entry.getKey()))
+          updStmt.with(QueryBuilder.set(entry.getKey(), entry.getValue()));
+      }
+
+      updStmt.setConsistencyLevel(writeConsistencyLevel).enableTracing();
+
+      if (debug) {
+        System.out.println(updStmt.toString());
+      }
+
+      ResultSet rs = session.execute(updStmt);
+
+      return Status.OK;
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+
+    return Status.ERROR;
+  }
+
+  @Override
+  public Status insert(String table, Object key, Map<String, Object> values) {
+    try {
+      Insert insertStmt = QueryBuilder.insertInto(table);
+
+      // Add key
+      insertStmt.value(YCSB_KEY, key);
+
+      // Add fields
+      for (Map.Entry<String, Object> entry : values.entrySet()) {
+        insertStmt.value(entry.getKey(), entry.getValue());
+      }
+
+      insertStmt.setConsistencyLevel(writeConsistencyLevel).enableTracing();
+
+      if (debug) {
+        System.out.println(insertStmt.toString());
+      }
+
+      ResultSet rs = session.execute(insertStmt);
+
+      return Status.OK;
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+
+    return Status.ERROR;
+  }
+  
+  private void getNextRow(Row row, Map<String, Object> result, Set<String> includeFields) {
+    ColumnDefinitions cd = row.getColumnDefinitions();
+
+    for (ColumnDefinitions.Definition def : cd) {
+      if (includeFields != null && !includeFields.contains(def.getName())) continue; 
+
+      Object val = row.getObject(def.getName());
+      if (val != null) {
+        result.put(def.getName(), val);
+      } else {
+        result.put(def.getName(), null);
+      }
+    }
   }
 
 }

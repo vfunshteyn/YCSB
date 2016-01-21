@@ -17,7 +17,9 @@
 
 package com.yahoo.ycsb;
 
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.Vector;
@@ -125,6 +127,10 @@ public abstract class DB
 	 * @return The result of the operation.
 	 */
 	public abstract Status insert(String table, String key, HashMap<String,ByteIterator> values);
+	
+	public Status delete(String table, Object key) {
+	  return Status.NOT_IMPLEMENTED;
+	}
 
 	/**
 	 * Delete a record from the database. 
@@ -133,5 +139,37 @@ public abstract class DB
 	 * @param key The record key of the record to delete.
 	 * @return The result of the operation.
 	 */
-	public abstract Status delete(String table, String key);
+	public Status delete(String table, String key) {
+	  return delete(table, (Object)key);
+	}
+	
+	public Status query(String table, Set<String> fields, Collection<Map<String, Object>> result, QueryConstraint... criteria) {
+	  return Status.NOT_IMPLEMENTED;
+	}
+	
+	public Status read(String table, Object key, Set<String> fields, Map<String, Object> result) {
+	  return Status.NOT_IMPLEMENTED;
+	}
+	
+    public Status update(String table, Object key, Map<String, Object> values) {
+      return Status.NOT_IMPLEMENTED;
+    }
+
+    public Status insert(String table, Object key, Map<String, Object> values) {
+      return Status.NOT_IMPLEMENTED;
+    }
+    
+    public Status clean(String table) {
+      return Status.NOT_IMPLEMENTED;
+    }
+
+    public static class QueryConstraint {
+      public final String fieldName;
+      public final Object fieldValue;
+      
+      public QueryConstraint(String name, Object value) {
+        this.fieldName = name;
+        this.fieldValue = value;
+      }
+    }
 }
