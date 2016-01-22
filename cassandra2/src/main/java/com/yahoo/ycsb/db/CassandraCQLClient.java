@@ -147,13 +147,13 @@ public class CassandraCQLClient extends DB {
         debug =
             Boolean.parseBoolean(getProperties().getProperty("debug", "false"));
 
-        String host = getProperties().getProperty(HOSTS_PROPERTY);
+        String host = getProperties().getProperty(HOSTS_PROPERTY).trim();
         if (host == null) {
           throw new DBException(String.format(
               "Required property \"%s\" missing for CassandraCQLClient",
               HOSTS_PROPERTY));
         }
-        String[] hosts = host.split(",");
+        String[] hosts = host.split("\\s*,\\s*");
         String port = getProperties().getProperty(PORT_PROPERTY, PORT_PROPERTY_DEFAULT);
 
         String username = getProperties().getProperty(USERNAME_PROPERTY);
@@ -207,6 +207,7 @@ public class CassandraCQLClient extends DB {
         if (readTimoutMillis != null) {
           cluster.getConfiguration().getSocketOptions()
               .setReadTimeoutMillis(Integer.valueOf(readTimoutMillis));
+          System.out.println("Using read timeout value of " +  cluster.getConfiguration().getSocketOptions().getReadTimeoutMillis());
         }
 
         Metadata metadata = cluster.getMetadata();
@@ -219,10 +220,12 @@ public class CassandraCQLClient extends DB {
               discoveredHost.getRack());
         }
 
+        cluster.getConfiguration().getQueryOptions().setFetchSize(500);
         session = cluster.connect(keyspace);
         
         if (queryString != null) {
           queryStmt = session.prepare(queryString);
+          
 
           for (int i = 0; i < queryStmt.getVariables().size(); i++) {
               // Be optimistic, 99% of the time, previous will be null.
@@ -522,23 +525,27 @@ public class CassandraCQLClient extends DB {
         Object o = c.fieldValue;
         
         String colName = c.fieldName.split("\\d")[0];
+        int[] indices = queryCols.get(colName);
+        if (indices == null) continue;
+
         Integer idx = colCt.get(colName);
         if (idx == null) {
           idx = 0;
         }
+        int pos = indices[idx];
         
         switch (o.getClass().getSimpleName()) {
           case "Integer" : 
-            bs.setInt(queryCols.get(colName)[idx], (Integer)o);
+            bs.setInt(pos, (Integer)o);
             break;
           case "Long" : 
-            bs.setLong(queryCols.get(colName)[idx], (Long)o);
+            bs.setLong(pos, (Long)o);
             break;
           case "String" : 
-            bs.setString(queryCols.get(colName)[idx], (String)o);
+            bs.setString(pos, (String)o);
             break;
           case "Double" :
-            bs.setFloat(queryCols.get(colName)[idx], ((Double)o).floatValue());
+            bs.setFloat(pos, ((Double)o).floatValue());
             break;
           default:
             throw new IllegalArgumentException(o.toString());
