@@ -17,6 +17,10 @@
  */
 package com.yahoo.ycsb.db;
 
+import com.codahale.metrics.ConsoleReporter;
+import com.codahale.metrics.Histogram;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.ScheduledReporter;
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.ColumnDefinitions;
@@ -47,10 +51,10 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Vector;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -122,6 +126,10 @@ public class CassandraCQLClient extends DB {
   private static final Map<String, int[]> queryCols = new HashMap<>();
   
   private static final Set<String> pkFields = new HashSet<>(); // additional PK columns
+  
+  private static ScheduledReporter metricReporter;
+  
+  private static Histogram resSizeStat;
 
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
@@ -226,7 +234,6 @@ public class CassandraCQLClient extends DB {
         if (queryString != null) {
           queryStmt = session.prepare(queryString);
           
-
           for (int i = 0; i < queryStmt.getVariables().size(); i++) {
               // Be optimistic, 99% of the time, previous will be null.
               String colName = queryStmt.getVariables().getName(i).toLowerCase();
@@ -239,6 +246,10 @@ public class CassandraCQLClient extends DB {
               }
           }
           
+          MetricRegistry reg = new MetricRegistry();
+          resSizeStat = reg.histogram("ResultSetSize");
+          metricReporter = ConsoleReporter.forRegistry(reg).build();
+          metricReporter.start(10, TimeUnit.SECONDS);
         }
 
       } catch (Exception e) {
@@ -269,6 +280,8 @@ public class CassandraCQLClient extends DB {
         cluster.close();
         cluster = null;
         session = null;
+        metricReporter.report();
+        metricReporter.close();
       }
       if (curInitCount < 0) {
         // This should never happen.
@@ -554,16 +567,19 @@ public class CassandraCQLClient extends DB {
       }
       
       ResultSet rs = session.execute(bs);
-      List<Row> results = rs.all();
-      if (debug) {
-        System.out.println(results.size() + " rows fetched.");
-      }
-      for (Row r: results) {
+      int rowCt = 0;
+      for (Row r: rs) {
           Map<String, Object> res = new HashMap<>();
           getNextRow(r, res, fields);
           result.add(res);
+          rowCt++;
       }
+
+      resSizeStat.update(rowCt);
       
+      if (debug) {
+        System.out.println(rowCt + " rows fetched.");
+      }
       
     } catch (Exception e) {
       log.error("Exception executing query", e);
