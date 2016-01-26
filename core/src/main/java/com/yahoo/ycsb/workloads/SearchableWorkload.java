@@ -41,7 +41,8 @@ public class SearchableWorkload extends CoreWorkload {
   private static final Map<String, FieldType> ftIndex = new HashMap<>();
   
   private static enum FieldType {
-    INT(Integer.class), LONG(Long.class), DOUBLE(Double.class), STRING(String.class), DATE(Date.class);
+    INT(Integer.class), LONG(Long.class), DOUBLE(Double.class), STRING(String.class), DATE(Date.class),
+    SHORT(Short.class), BYTE(Byte.class);
     
     final Class<?> javaType; 
     
@@ -185,16 +186,16 @@ public class SearchableWorkload extends CoreWorkload {
             final NumberGenerator dayGen = getNumericGenerator(fb.distType, 
                 TimeUnit.MILLISECONDS.toDays(start.getTime()), TimeUnit.MILLISECONDS.toDays(end.getTime()), p);
             
-            Builder<Integer> db = (Builder<Integer>)fb;
-            db.valueGen = new Generator<Comparable<Integer>>() {
+            Builder<Date> db = (Builder<Date>)fb;
+            db.valueGen = new Generator<Comparable<Date>>() {
               @Override
-              public Integer nextValue() {
-                return dayGen.nextValue().intValue();
+              public Date nextValue() {
+                return new Date(TimeUnit.DAYS.toMillis(dayGen.nextValue().intValue()));
               }
 
               @Override
-              public Integer lastValue() {
-                return dayGen.lastValue().intValue();
+              public Date lastValue() {
+                return new Date(TimeUnit.DAYS.toMillis(dayGen.lastValue().intValue()));
               }
               
             };
@@ -237,6 +238,46 @@ public class SearchableWorkload extends CoreWorkload {
             @Override
             public Comparable<Integer> lastValue() {
               return gen.lastValue().intValue();
+            }
+          };
+          
+          break;
+        }
+        case BYTE: {
+          Builder<Byte> db = (Builder<Byte>)fb;
+          int min = fb.min == null ? 1 : Byte.valueOf(fb.min);
+          int max = fb.max == null ? Byte.MAX_VALUE : Byte.valueOf(fb.max);
+          final NumberGenerator gen = getNumericGenerator(fb.distType, min, max, p);
+          db.valueGen = new Generator<Comparable<Byte>>() {
+
+            @Override
+            public Comparable<Byte> nextValue() {
+              return gen.nextValue().byteValue();
+            }
+
+            @Override
+            public Comparable<Byte> lastValue() {
+              return gen.lastValue().byteValue();
+            }
+          };
+          
+          break;
+        }
+        case SHORT: {
+          Builder<Short> db = (Builder<Short>)fb;
+          int min = fb.min == null ? 1 : Short.valueOf(fb.min);
+          int max = fb.max == null ? Short.MAX_VALUE : Short.valueOf(fb.max);
+          final NumberGenerator gen = getNumericGenerator(fb.distType, min, max, p);
+          db.valueGen = new Generator<Comparable<Short>>() {
+
+            @Override
+            public Comparable<Short> nextValue() {
+              return gen.nextValue().shortValue();
+            }
+
+            @Override
+            public Comparable<Short> lastValue() {
+              return gen.lastValue().shortValue();
             }
           };
           
@@ -323,8 +364,6 @@ public class SearchableWorkload extends CoreWorkload {
 
   @Override
   public void doTransactionRead(DB db) {
-    // choose a random key
-    int keynum = nextKeynum();
 
     Set<String> fields;
 
@@ -338,15 +377,12 @@ public class SearchableWorkload extends CoreWorkload {
     }
 
     Map<String, Object> cells = new HashMap<>();
-    db.read(table, keynum, fields, cells);
+    db.read(table, buildPK(), fields, cells);
 
   }
 
   @Override
   public void doTransactionUpdate(DB db) {
-    // choose a random key
-    int keynum = nextKeynum();
-
     Map<String, Object> values = new HashMap<>();
 
     if (writeallfields) {
@@ -365,7 +401,7 @@ public class SearchableWorkload extends CoreWorkload {
       }
     }
 
-    db.update(table, keynum, values);
+    db.update(table, buildPK(), values);
   }
 
   @Override
@@ -426,6 +462,7 @@ public class SearchableWorkload extends CoreWorkload {
     db.query(table, fields, cells, criteria.toArray(new QueryConstraint[criteria.size()])); 
   }
   
+  @Override
   public boolean doDelete(DB db) {
     int keynum = keysequence.nextValue().intValue();
     return Status.OK == db.delete(table, String.valueOf(keynum));
@@ -441,6 +478,21 @@ public class SearchableWorkload extends CoreWorkload {
 
   private Object buildValue(Field<?> f) {
     return f.nextRandomValue();
+  }
+  
+  private Object buildPK() {
+    if (!pkFields.isEmpty()) {
+      Map<String, Object> pkVals = new HashMap<>();
+      for (Field<?> pk: pkFields.values()) {
+        pkVals.put(pk.name, buildValue(pk));
+      }
+      return pkVals;
+    }
+    else {
+      // choose a random key
+      return nextKeynum();
+    }
+    
   }
 
 }

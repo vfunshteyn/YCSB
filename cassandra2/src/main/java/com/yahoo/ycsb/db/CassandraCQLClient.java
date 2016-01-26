@@ -27,6 +27,7 @@ import com.datastax.driver.core.ColumnDefinitions;
 import com.datastax.driver.core.ConsistencyLevel;
 import com.datastax.driver.core.Host;
 import com.datastax.driver.core.HostDistance;
+import com.datastax.driver.core.LocalDate;
 import com.datastax.driver.core.Metadata;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
@@ -49,6 +50,8 @@ import com.yahoo.ycsb.workloads.SearchableWorkload;
 
 import java.nio.ByteBuffer;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -280,8 +283,11 @@ public class CassandraCQLClient extends DB {
         cluster.close();
         cluster = null;
         session = null;
-        metricReporter.report();
-        metricReporter.close();
+        
+        if (metricReporter != null) {
+          metricReporter.report();
+          metricReporter.close();
+        }
       }
       if (curInitCount < 0) {
         // This should never happen.
@@ -551,6 +557,12 @@ public class CassandraCQLClient extends DB {
           case "Integer" : 
             bs.setInt(pos, (Integer)o);
             break;
+          case "Byte" : 
+            bs.setByte(pos, (Byte)o);
+            break;
+          case "Short" : 
+            bs.setShort(pos, (Short)o);
+            break;
           case "Long" : 
             bs.setLong(pos, (Long)o);
             break;
@@ -559,6 +571,9 @@ public class CassandraCQLClient extends DB {
             break;
           case "Double" :
             bs.setFloat(pos, ((Double)o).floatValue());
+            break;
+          case "Date" :
+            bs.setDate(pos, LocalDate.fromMillisSinceEpoch(((Date)o).getTime()));
             break;
           default:
             throw new IllegalArgumentException(o.toString());
@@ -592,7 +607,7 @@ public class CassandraCQLClient extends DB {
   @Override
   public Status read(String table, Object key, Set<String> fields, Map<String, Object> result) {
     try {
-      Statement stmt;
+      Select stmt;
       Select.Builder selectBuilder;
 
       if (fields == null) {
@@ -603,10 +618,25 @@ public class CassandraCQLClient extends DB {
           ((Select.Selection) selectBuilder).column(col);
         }
       }
+      stmt = selectBuilder.from(table);
+      
+      if (key instanceof Map<?, ?>) {
+        Map<String, Object> compPk = (Map<String, Object>)key;
+        for (Map.Entry<String, Object> pkField: compPk.entrySet()) {
+          Object value = pkField.getValue();
 
-      stmt = selectBuilder.from(table).where(QueryBuilder.eq(YCSB_KEY, key))
-          .limit(1);
-      stmt.setConsistencyLevel(readConsistencyLevel);
+          if (value != null) {
+            if (value instanceof Date) {
+              value = LocalDate.fromMillisSinceEpoch(((Date)value).getTime());
+            }
+            stmt.where(QueryBuilder.eq(pkField.getKey(), value)); 
+          }
+        }
+      } else {
+        stmt.where(QueryBuilder.eq(YCSB_KEY, key));
+      }
+
+      stmt.limit(1).setConsistencyLevel(readConsistencyLevel);
 
       if (debug) {
         System.out.println(stmt.toString());
@@ -634,23 +664,30 @@ public class CassandraCQLClient extends DB {
   public Status update(String table, Object key, Map<String, Object> values) {
     try {
       Update updStmt = QueryBuilder.update(table);
+      Set<String> pkNames;
 
-      // Add key
-      updStmt.where(QueryBuilder.eq(YCSB_KEY, key));
-      
       // Hack!
-      if (!pkFields.isEmpty()) {
-        Map<String, Object> res = new HashMap<>(1);
-        read(table, key, pkFields, res);
-        for (String fName: pkFields) {
-          Object v = res.get(fName);
-          if (v != null) updStmt.where(QueryBuilder.eq(fName, v)); 
+      if (key instanceof Map<?, ?>) {
+        Map<String, Object> compPk = (Map<String, Object>)key;
+        for (Map.Entry<String, Object> pkField: compPk.entrySet()) {
+          Object value = pkField.getValue();
+          if (value != null) {
+            if (value instanceof Date) {
+              value = LocalDate.fromMillisSinceEpoch(((Date)value).getTime());
+            }
+            
+            updStmt.where(QueryBuilder.eq(pkField.getKey(), value)); 
+          }
         }
+        pkNames = new HashSet<>(compPk.keySet());
+      } else {
+        updStmt.where(QueryBuilder.eq(YCSB_KEY, key));
+        pkNames = Collections.singleton(YCSB_KEY);
       }
       
       // Add fields
       for (Map.Entry<String, Object> entry : values.entrySet()) {
-        if (!pkFields.contains(entry.getKey()))
+        if (!pkNames.contains(entry.getKey()))
           updStmt.with(QueryBuilder.set(entry.getKey(), entry.getValue()));
       }
 
@@ -660,7 +697,7 @@ public class CassandraCQLClient extends DB {
         System.out.println(updStmt.toString());
       }
 
-      ResultSet rs = session.execute(updStmt);
+      session.execute(updStmt);
 
       return Status.OK;
     } catch (Exception e) {
@@ -676,11 +713,15 @@ public class CassandraCQLClient extends DB {
       Insert insertStmt = QueryBuilder.insertInto(table);
 
       // Add key
-      insertStmt.value(YCSB_KEY, key);
+      // insertStmt.value(YCSB_KEY, key);
 
       // Add fields
       for (Map.Entry<String, Object> entry : values.entrySet()) {
-        insertStmt.value(entry.getKey(), entry.getValue());
+        Object value = entry.getValue();
+        if (value instanceof Date) {
+          value = LocalDate.fromMillisSinceEpoch(((Date)value).getTime());
+        }
+        insertStmt.value(entry.getKey(), value);
       }
 
       insertStmt.setConsistencyLevel(writeConsistencyLevel).enableTracing();
@@ -689,7 +730,7 @@ public class CassandraCQLClient extends DB {
         System.out.println(insertStmt.toString());
       }
 
-      ResultSet rs = session.execute(insertStmt);
+      session.execute(insertStmt);
 
       return Status.OK;
     } catch (Exception e) {
