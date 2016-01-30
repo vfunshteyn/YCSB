@@ -75,6 +75,7 @@ DATABASES = {
     "infinispan-cs": "com.yahoo.ycsb.db.InfinispanRemoteClient",
     "infinispan"   : "com.yahoo.ycsb.db.InfinispanClient",
     "jdbc"         : "com.yahoo.ycsb.db.JdbcDBClient",
+    "rdbms"        : "com.yahoo.ycsb.db.RDBMSClient",
     "kudu"         : "com.yahoo.ycsb.db.KuduYCSBClient",
     "mapkeeper"    : "com.yahoo.ycsb.db.MapKeeperClient",
     "memcached"    : "com.yahoo.ycsb.db.MemcachedClient",

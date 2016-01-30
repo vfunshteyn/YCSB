@@ -63,7 +63,7 @@ field.book_before.queryparams = 1
 
 field.price.type = double
 field.price.range = 50, 500
-field.price.queryparams = 2
+#field.price.queryparams = 2
 
 field.rate_code.type = string
 field.rate_code.range = 5, 30
@@ -72,4 +72,8 @@ couchbase.query = select hotel_id, rate_cat_id, stay_date, book_start, book_end,
 
 cassandra.query = select * from ycsb.hotel_rates where hotel_id = ? and rate_cat_id in (?, ?, ?) and stay_date = ? and book_before >= ? allow filtering; 
 
+db.url = jdbc:postgresql:ycsb
+db.user = postgres
+db.passwd = pg
+db.querySql = select * from hotel_rates where book_before >= ? and hotel_id = ? and rate_cat_id in (?, ?, ?) and stay_date = ?
 # cassandra.query = select * from ycsb.hotel_rates where hotel_id = ?

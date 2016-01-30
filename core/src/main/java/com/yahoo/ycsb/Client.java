@@ -369,6 +369,12 @@ class ClientThread extends Thread
       }
     }
 
+    try {
+      gate.await();
+    } catch (InterruptedException | BrokenBarrierException e1) {
+      throw new RuntimeException(e1);
+    }
+
     try
     {
       _measurements.setIntendedStartTimeNs(0);

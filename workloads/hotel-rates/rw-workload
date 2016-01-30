@@ -70,5 +70,8 @@ field.rate_code.range = 5, 30
 
 couchbase.query = select hotel_id, rate_cat_id, stay_date, book_start, book_end, price from `hotel-rates` where hotel_id == $hotel_id and rate_cat_id IN [$rate_cat_id1, $rate_cat_id2, $rate_cat_id3] and book_start <= $book_start and book_end >= $book_end and price between $price1 and $price2
 
-pk_fields = rate_cat_id, hotel_id, book_before, stay_date
+# pk_fields = rate_cat_id, hotel_id, book_before, stay_date
+db.url = jdbc:postgresql:ycsb
+db.user = postgres
+db.passwd = pg
 
