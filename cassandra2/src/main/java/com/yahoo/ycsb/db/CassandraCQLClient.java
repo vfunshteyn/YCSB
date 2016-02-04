@@ -46,8 +46,6 @@ import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.Status;
-import com.yahoo.ycsb.workloads.SearchableWorkload;
-
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
@@ -127,8 +125,6 @@ public class CassandraCQLClient extends DB {
   private static final Logger log = LoggerFactory.getLogger(CassandraCQLClient.class);
   
   private static final Map<String, int[]> queryCols = new HashMap<>();
-  
-  private static final Set<String> pkFields = new HashSet<>(); // additional PK columns
   
   private static ScheduledReporter metricReporter;
   
@@ -257,14 +253,6 @@ public class CassandraCQLClient extends DB {
 
       } catch (Exception e) {
         throw new DBException(e);
-      }
-      
-      String pkCols = getProperties().getProperty(SearchableWorkload.ADDITIONAL_PK_FIELDS_PROP, "").trim();
-      if (!pkCols.isEmpty()) {
-        String[] parts = pkCols.split("\\s*,\\s*");
-        for (String s: parts) {
-          pkFields.add(s);
-        }
       }
       
     } // synchronized
@@ -747,11 +735,7 @@ public class CassandraCQLClient extends DB {
       if (includeFields != null && !includeFields.contains(def.getName())) continue; 
 
       Object val = row.getObject(def.getName());
-      if (val != null) {
-        result.put(def.getName(), val);
-      } else {
-        result.put(def.getName(), null);
-      }
+      result.put(def.getName(), val);
     }
   }
 
