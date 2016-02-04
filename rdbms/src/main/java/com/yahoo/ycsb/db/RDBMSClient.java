@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
@@ -23,6 +24,8 @@ import com.codahale.metrics.ConsoleReporter;
 import com.codahale.metrics.Histogram;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.ScheduledReporter;
+import com.google.common.base.Function;
+import com.google.common.collect.Maps;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
@@ -42,10 +45,11 @@ public final class RDBMSClient extends DB {
 
   private static final String YCSB_KEY = "y_id";
   
-  private static final String INSERT_SQL = "insert into %s (y_id%s) values (?%s)";
+  private static final String INSERT_SQL = "insert into %s (%s) values (%s)";
   
-  private static final String UPDATE_SQL = "update %s set %s where %s = ?";
-      
+  private static final String UPDATE_SQL = "update %s set %s where %s";
+  
+  private static final String READ_SQL = "select * from %s where %s";
   
   private Connection conn;
   private PreparedStatement insertStmt, readStmt, deleteStmt, selectStmt;
@@ -60,10 +64,17 @@ public final class RDBMSClient extends DB {
   
   private static Histogram resSizeStat;
 
+  private final Function<ByteIterator, Object> xFormer = new Function<ByteIterator, Object>() {
+    @Override
+    public Object apply(ByteIterator input) {
+      return input.toString();
+    }
+  };
+  
+
   @Override
   public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
-    // TODO Auto-generated method stub
-    return null;
+    return read(table, key, fields, Maps.transformValues(result, xFormer));
   }
 
   @Override
@@ -74,14 +85,12 @@ public final class RDBMSClient extends DB {
 
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
-    // TODO Auto-generated method stub
-    return null;
+    return update(table, key, Maps.transformValues(values, xFormer));
   }
 
   @Override
   public Status insert(String table, String key, HashMap<String, ByteIterator> values) {
-    // TODO Auto-generated method stub
-    return null;
+    return insert(table, key, Maps.transformValues(values, xFormer));
   }
 
   @Override
@@ -136,14 +145,7 @@ public final class RDBMSClient extends DB {
   }
 
   @Override
-  public Status delete(String table, Object key) {
-    // TODO Auto-generated method stub
-    return super.delete(table, key);
-  }
-
-  @Override
   public Status query(String table, Set<String> fields, Collection<Map<String, Object>> result, QueryConstraint... criteria) {
-    // Map<String, Integer> colCt = new HashMap<>();
     Arrays.sort(criteria, new Comparator<QueryConstraint>() {
 
       @Override
@@ -164,6 +166,10 @@ public final class RDBMSClient extends DB {
       
     }
     
+    if (debug) {
+      System.out.println("Executing: " + selectStmt);
+    }
+
     try (ResultSet rs = selectStmt.executeQuery()){
       int rowCt = 0;
       while (rs.next()) {
@@ -189,12 +195,29 @@ public final class RDBMSClient extends DB {
   @Override
   public Status read(String table, Object key, Set<String> fields, Map<String, Object> result) {
     try {
+      Map<String, Object> pk;
+      if (key instanceof Map<?, ?>) {
+        pk = (Map<String, Object>)key;
+      } else {
+        pk = Collections.singletonMap(YCSB_KEY, key);
+      }
+        
       if (readStmt == null) {
-        readStmt = conn.prepareStatement(String.format("select * from %s where y_id = ?", table));
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Object> entry: pk.entrySet()) {
+          sb.append(entry.getKey());
+          sb.append("= ? and ");
+        }
+        sb.delete(sb.lastIndexOf(" and "), sb.length());
+        String readSql = String.format(READ_SQL, table, sb.toString());
+        readStmt = conn.prepareStatement(readSql);
       }
       
-      readStmt.setObject(1, key);
-
+      int idx = 1;
+      for (Map.Entry<String, Object> entry: pk.entrySet()) {
+        readStmt.setObject(idx++, maybeConvDate(entry.getValue()));
+      }
+      
       if (debug) {
         System.out.println(readStmt.toString());
       }
@@ -220,29 +243,45 @@ public final class RDBMSClient extends DB {
   @Override
   public Status update(String table, Object key, Map<String, Object> values) {
     try {
-      StringBuilder sb = new StringBuilder();
+      Map<String, Object> pk;
+      if (key instanceof Map<?, ?>) {
+        pk = (Map<String, Object>)key;
+      } else {
+        pk = Collections.singletonMap(YCSB_KEY, key);
+      }
+        
+      StringBuilder valSb = new StringBuilder();
       
       for (Map.Entry<String, Object> entry: values.entrySet()) {
-        sb.append(entry.getKey());
-        sb.append(" = ?,");
+        valSb.append(entry.getKey());
+        valSb.append(" = ?,");
       }
-      sb.deleteCharAt(sb.length() - 1);
-      String updSql = String.format(UPDATE_SQL, table, sb.toString(), YCSB_KEY);
+      valSb.deleteCharAt(valSb.length() - 1);
+      
+      
+      StringBuilder keySb = new StringBuilder();
+      for (Map.Entry<String, Object> entry: pk.entrySet()) {
+        keySb.append(entry.getKey());
+        keySb.append("= ? and ");
+      }
+      keySb.delete(keySb.lastIndexOf(" and "), keySb.length());
+      String updSql = String.format(UPDATE_SQL, table, valSb.toString(), keySb.toString());
       
       PreparedStatement updStmt = updateStmt.get(updSql);
       if (updStmt == null) {
         updStmt = conn.prepareStatement(updSql);
         updateStmt.put(updSql, updStmt);
       }
-      
       if (debug) System.out.println(updStmt);
       
       int idx = 1;
-      for (Map.Entry<String, Object> entry: values.entrySet()) {
-        updStmt.setObject(idx++, maybeConvDate(entry.getValue()));
+      for (Object value: values.values()) {
+        updStmt.setObject(idx++, maybeConvDate(value));
       }
     
-      updStmt.setObject(idx, key);
+      for (Object value: pk.values()) {
+        updStmt.setObject(idx++, maybeConvDate(value));
+      }
       
       int rowCt = updStmt.executeUpdate();
       if (rowCt != 1) return Status.UNEXPECTED_STATE;
@@ -261,15 +300,16 @@ public final class RDBMSClient extends DB {
         StringBuilder sb1 = new StringBuilder(), sb2 = new StringBuilder();
         
         for (String colName: values.keySet()) {
-          sb1.append(", ").append(colName);
-          sb2.append(", ?");
+          sb1.append(colName).append(",");
+          sb2.append("?,");
         }
+        sb1.deleteCharAt(sb1.length() - 1);
+        sb2.deleteCharAt(sb2.length() - 1);
         
         String insSql = String.format(INSERT_SQL, table, sb1.toString(), sb2.toString());
         insertStmt = conn.prepareStatement(insSql);
       }
-      insertStmt.setObject(1, key);
-      int index = 2;
+      int index = 1;
       int result[] = null;
       for (Object o : values.values()) {
         insertStmt.setObject(index++, maybeConvDate(o));
@@ -289,8 +329,11 @@ public final class RDBMSClient extends DB {
     } catch (SQLException e) {
       System.err.println("Error in processing insert to table: " + table + e);
       if (e instanceof BatchUpdateException) {
-        BatchUpdateException be = (BatchUpdateException)e;
-        be.getNextException().printStackTrace();
+        if (debug) {
+          BatchUpdateException be = (BatchUpdateException)e;
+          be.getNextException().printStackTrace();
+        }
+        return Status.OK;
       }
       return Status.ERROR;
     }

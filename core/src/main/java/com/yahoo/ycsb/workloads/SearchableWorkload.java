@@ -386,8 +386,9 @@ public class SearchableWorkload extends CoreWorkload {
     Map<String, Object> values = new HashMap<>();
 
     if (writeallfields) {
-      // new data for all the fields
-      values.putAll(buildValues());
+      // new data for all the fields, except PK
+      values = buildValues();
+      values.keySet().removeAll(pkFields.keySet());
     } else {
       // update a random field
       Field<?> f;
@@ -396,9 +397,6 @@ public class SearchableWorkload extends CoreWorkload {
       } while (pkFields.containsKey(f.name));
       
       values.put(f.name, buildValue(f));
-      for (Field<?> pk: pkFields.values()) {
-        values.put(pk.name, buildValue(pk));
-      }
     }
 
     db.update(table, buildPK(), values);
