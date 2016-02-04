@@ -61,6 +61,11 @@ LICENSE file.
     </dependency>
     <dependency>
       <groupId>com.yahoo.ycsb</groupId>
+      <artifactId>couchbase2-binding</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.yahoo.ycsb</groupId>
       <artifactId>dynamodb-binding</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -152,6 +157,11 @@ LICENSE file.
     <dependency>
       <groupId>com.yahoo.ycsb</groupId>
       <artifactId>tarantool-binding</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.yahoo.ycsb</groupId>
+      <artifactId>rdbms-binding</artifactId>
       <version>${project.version}</version>
     </dependency>
 <!--
