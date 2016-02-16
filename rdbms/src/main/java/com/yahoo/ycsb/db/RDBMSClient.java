@@ -298,6 +298,10 @@ public final class RDBMSClient extends DB {
     try {
       if (insertStmt == null) {
         StringBuilder sb1 = new StringBuilder(), sb2 = new StringBuilder();
+        if (key != null) {
+          sb1.append(YCSB_KEY).append(",");
+          sb2.append("?,");
+        }
         
         for (String colName: values.keySet()) {
           sb1.append(colName).append(",");
@@ -311,6 +315,9 @@ public final class RDBMSClient extends DB {
       }
       int index = 1;
       int result[] = null;
+      if (key != null) {
+        insertStmt.setObject(index++, key);
+      }
       for (Object o : values.values()) {
         insertStmt.setObject(index++, maybeConvDate(o));
       }

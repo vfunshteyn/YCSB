@@ -700,8 +700,8 @@ public class CassandraCQLClient extends DB {
     try {
       Insert insertStmt = QueryBuilder.insertInto(table);
 
-      // Add key
-      // insertStmt.value(YCSB_KEY, key);
+      // Add key if applicable
+      if (key != null) insertStmt.value(YCSB_KEY, key);
 
       // Add fields
       for (Map.Entry<String, Object> entry : values.entrySet()) {

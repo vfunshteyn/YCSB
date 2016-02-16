@@ -58,7 +58,7 @@ field.stay_date.queryparams = 1
 #field.book_start.queryparams = 1
 
 field.book_before.type = date
-field.book_before.range = 2016-01-01, 2016-01-30
+field.book_before.range = 2015-01-01, 2016-01-30
 field.book_before.queryparams = 1
 
 field.price.type = double
@@ -72,8 +72,9 @@ couchbase.query = select hotel_id, rate_cat_id, stay_date, book_start, book_end,
 
 cassandra.query = select * from ycsb.hotel_rates where hotel_id = ? and rate_cat_id in (?, ?, ?) and stay_date = ? and book_before >= ? allow filtering; 
 
+pk_fields = hotel_id, rate_cat_id, book_before, stay_date
 db.url = jdbc:postgresql:ycsb
 db.user = postgres
 db.passwd = pg
 db.querySql = select * from hotel_rates where book_before >= ? and hotel_id = ? and rate_cat_id in (?, ?, ?) and stay_date = ?
-# cassandra.query = select * from ycsb.hotel_rates where hotel_id = ?
+db.batchSize=50

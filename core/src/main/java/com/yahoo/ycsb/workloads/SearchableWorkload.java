@@ -329,7 +329,7 @@ public class SearchableWorkload extends CoreWorkload {
 
   @Override
   public boolean doInsert(DB db, Object threadstate) {
-    int keynum = keysequence.nextValue().intValue();
+    Integer keynum = pkFields.isEmpty() ? keysequence.nextValue().intValue() : null;
     Map<String, Object> values = buildValues();
 
     Status status;
