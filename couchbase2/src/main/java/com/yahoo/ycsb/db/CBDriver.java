@@ -43,9 +43,6 @@ public class CBDriver extends DB {
   public static final String HOST_LIST_PROPERTY = "couchbase.servers";
   public static final String HOST_LIST_DEFAULT  = "localhost";
 
-  public static final String BUCKET_PROPERTY = "couchbase.bucket";
-  public static final String BUCKET_DEFAULT  = "default";
-  
   public static final String PASSWORD_PROPERTY = "couchbase.password";
   public static final String PASSWORD_DEFAULT = "";
   
