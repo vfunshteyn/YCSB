@@ -284,7 +284,7 @@ public final class RDBMSClient extends DB {
       }
       
       int rowCt = updStmt.executeUpdate();
-      if (rowCt != 1) return Status.UNEXPECTED_STATE;
+      if (rowCt < 1) return Status.NOT_FOUND;
       return Status.OK;
     } catch (SQLException e) {
       e.printStackTrace();
